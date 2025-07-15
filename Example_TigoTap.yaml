@@ -1,0 +1,98 @@
+esphome:
+  name: tigocca
+  friendly_name: TigoCCA
+
+esp32:
+  board: esp32dev
+
+external_components:
+  - source: github://N30dG/esphome-components
+
+# Enable logging
+logger:
+  level: ERROR
+  hardware_uart: UART1 # UART0 is used for TigoTAP
+
+# Enable Home Assistant API
+api:
+
+# Allow Over-The-Air updates
+ota:
+- platform: esphome
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+# Setup UART
+uart:
+  baud_rate: 38400
+  tx_pin: GPIO1
+  rx_pin: GPIO3
+
+# Setup TigoTap Component
+TigoTap:
+  id: TigoCCA
+
+# Setup Sensors for each PV-Module
+# Note that it can take up to 24h before the Barcode Table is filled and the Sensors deliver any data.
+# Usually Barcodes are only between exchanged on Topology Changes. Under normal circumstances this only happends in the late evening or morning hours.
+sensor:
+  - platform: TigoTap
+    name: A01_Vin
+    tap-ID: TigoCCA
+    type: Vin
+    barcode: "4-AABBCCH" # Barcode of the TS4-Module,
+    unit_of_measurement: V
+    accuracy_decimals: 2
+    timeout: 60 #optional: defaults to 60, Timout after which the Sensor will report 0 back. Set this to 0 to disable the timout.
+
+  - platform: TigoTap
+    id: A01_Vout
+    name: A01_Vout
+    tap-ID: TigoCCA
+    type: Vout
+    barcode: "4-AABBCCH"
+    unit_of_measurement: V
+    accuracy_decimals: 1
+  
+  - platform: TigoTap
+    id: A01_Iin
+    name: A01_Iin
+    tap-ID: TigoCCA
+    type: Iin
+    barcode: "4-AABBCCH"
+    unit_of_measurement: A
+    accuracy_decimals: 3
+
+  - platform: TigoTap
+    name: A01_Temp
+    tap-ID: TigoCCA
+    type: Temp
+    barcode: "4-AABBCCH"
+    unit_of_measurement: °C
+    accuracy_decimals: 1
+
+  - platform: TigoTap
+    name: A01_RSSI
+    tap-ID: TigoCCA
+    type: RSSI
+    barcode: "4-AABBCCH"
+    unit_of_measurement: db
+    accuracy_decimals: 1
+
+  - platform: TigoTap
+    name: A01_DcDcDuty
+    tap-ID: TigoCCA
+    type: DcDcDuty
+    barcode: "4-AABBCCH"
+    unit_of_measurement: "%"
+    accuracy_decimals: 1
+
+  # The Tap doesn't report back Power, just use a template to calculate it, if needed.
+  - platform: template
+    name: A01_Power
+    unit_of_measurement: W
+    accuracy_decimals: 3
+    lambda: |-
+      return id(A01_Vout).state * id(A01_Iin).state;
