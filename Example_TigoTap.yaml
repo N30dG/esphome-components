@@ -46,7 +46,7 @@ sensor:
     barcode: "4-AABBCCH" # Barcode of the TS4-Module,
     unit_of_measurement: V
     accuracy_decimals: 2
-    timeout: 60 #optional: defaults to 60, Timout after which the Sensor will report 0 back. Set this to 0 to disable the timout.
+    sensor_timeout: 60 #optional: defaults to 60, Timout after which the Sensor will report 0 back. Set this to 0 to disable the timout.
 
   - platform: TigoTap
     id: A01_Vout

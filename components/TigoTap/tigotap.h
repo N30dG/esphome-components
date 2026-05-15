@@ -135,7 +135,7 @@ namespace esphome {
                 nvs_handle_t nvsBarcodeTable;
             
                 bool readByte(uint8_t* byte);
-                bool readFrame(FrameBuffer* frame);
+                uint8_t readFrame(FrameBuffer* frame);
                 bool checkFrameCRC(FrameBuffer* frame);
                 void processFrame(FrameBuffer* frame);
                 void logFrame(FrameBuffer* frame);

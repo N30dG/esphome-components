@@ -174,9 +174,10 @@ namespace esphome {
 
     void TigoTap::loop() {
         FrameBuffer frame = FrameBuffer();
-        if ( !this->readFrame(&frame) )
-            ESP_LOGD(TAG, "Error Reading Frame!");
-        else {
+        uint8_t readStatus = this->readFrame(&frame);
+        if ( readStatus < 0 )
+            ESP_LOGW(TAG, "Error Reading Frame!");
+        else if ( readStatus == 1 ) {
             uint16_t frameType = (frame[2]<<8) | (frame[3] & 0xFF);
 
             if ( ( frameType == 0x0149) || (frameType == 0x0B10) || (frameType == 0x0B0F) ) {
@@ -228,7 +229,7 @@ namespace esphome {
             return false;
     }
 
-    bool TigoTap::readFrame(FrameBuffer* buffer) {
+    uint8_t TigoTap::readFrame(FrameBuffer* buffer) {
         uint8_t currentByte;
         bool frameStarted = false;
         bool frameFinished = false;
@@ -285,16 +286,15 @@ namespace esphome {
                 }
             }
             else {
-                break;
+                // No data
+                return 0;
             }
         }
-
-        return (frameStarted && frameFinished);
+        return (frameStarted && frameFinished) ? 1 : -1;
     }
 
     void TigoTap::processFrame(FrameBuffer* frame) {
         uint16_t frameType = ((*frame)[2]<<8) | ((*frame)[3] & 0xFF);
-
 
         if (frameType == 0x0149) {
             // We are (for now) not intressted in the Headers Content so just skip it
@@ -307,15 +307,20 @@ namespace esphome {
                 uint8_t packetLength = (*frame)[index+6];
 
                 if (packetType == 0x31) {
+                    ESP_LOGD(TAG, "Packet 0x31 detected!");
                     // Power Report Packet
-                    if ( !this->processPowerPacket(frame, index) ) 
+                    if ( !this->processPowerPacket(frame, index) ) {
+                        ESP_LOGW(TAG, "Error Processing Power Packet!");
                         break;
+                    }
                 }
                 else if (packetType == 0x09) {
-                    ESP_LOGD(TAG, "Packet 09 deteced!");
+                    ESP_LOGD(TAG, "Packet 0x09 detected!");
                     this->logFrame(frame);
-                    if ( !this->processTopologyReport(frame, index) )
+                    if ( !this->processTopologyReport(frame, index) ) {
+                        ESP_LOGW(TAG, "Error Processing Topology Report!");
                         break;
+                    }
                 }
                 index = index + packetLength + 7;
             }
@@ -324,7 +329,7 @@ namespace esphome {
             uint8_t packetType = (*frame)[7];
 
             if (packetType == 0x27) {
-                ESP_LOGD(TAG, "Packet 27 deteced!");
+                ESP_LOGD(TAG, "Packet 0x27 detected!");
                 this->logFrame(frame);
                 this->processNodeTable(frame, 7);
             }
@@ -332,7 +337,7 @@ namespace esphome {
     }
 
     bool TigoTap::processPowerPacket(FrameBuffer* frame, uint16_t position) {
-        if ( (frame->length()>position+19) && ((*frame)[position+6]==13) ) {
+        if ( frame->length()>position+19 ) {
             uint16_t pvNodeId = ((*frame)[position+1]<<8) | ((*frame)[position+2] & 0xFF);
 
             uint16_t vin = ((*frame)[position+7]<<4) | (((*frame)[position+8]&0xF0)>>4); // Scale 0.05V
@@ -355,7 +360,7 @@ namespace esphome {
                 }
             }
             
-            //ESP_LOGD("Power", "ID: %x (RSSI: %i) - Vin: %f, Vout: %f, Duty: %i, I: %f, T: %f", pvNodeId, rssi, (vin*0.05), (vout*0.10), duty, (iin*0.005), (t*0.1));
+            ESP_LOGD("Power", "ID: %x (RSSI: %i) - Vin: %f, Vout: %f, Duty: %i, I: %f, T: %f", pvNodeId, rssi, (vin*0.05), (vout*0.10), duty, (iin*0.005), (temp*0.1));
         
             return true;
         }
@@ -374,7 +379,7 @@ namespace esphome {
         }
         uint8_t rssi = (*frame)[position+23];
 
-        //ESP_LOGD(TAG, "ID: %i (RSSI: %i) - %x %x %x %x %x %x %x %x - len: %i", pvNodeId, rssi, pvNodeAddr[0], pvNodeAddr[1], pvNodeAddr[2], pvNodeAddr[3], pvNodeAddr[4], pvNodeAddr[5], pvNodeAddr[6], pvNodeAddr[7], length);
+        ESP_LOGD(TAG, "ID: %i (RSSI: %i) - %x %x %x %x %x %x %x %x - len: %i", pvNodeId, rssi, pvNodeAddr[0], pvNodeAddr[1], pvNodeAddr[2], pvNodeAddr[3], pvNodeAddr[4], pvNodeAddr[5], pvNodeAddr[6], pvNodeAddr[7], length);
         std::string barcode;
         this->generateBarcodeFromAddress(&barcode, pvNodeAddr);
         this->updateBarcodeTable(&barcode, pvNodeId);
@@ -395,7 +400,7 @@ namespace esphome {
             }
             pvNodeId = ((*frame)[position+14]<<8) | ((*frame)[position+15] & 0xFF);
 
-            //ESP_LOGD(TAG, "ID: %i (entrys: %i) - %x %x %x %x %x %x %x %x", pvNodeId, entrys, pvNodeAddr[0], pvNodeAddr[1], pvNodeAddr[2], pvNodeAddr[3], pvNodeAddr[4], pvNodeAddr[5], pvNodeAddr[6], pvNodeAddr[7]);
+            ESP_LOGD(TAG, "ID: %i (entrys: %i) - %x %x %x %x %x %x %x %x", pvNodeId, entrys, pvNodeAddr[0], pvNodeAddr[1], pvNodeAddr[2], pvNodeAddr[3], pvNodeAddr[4], pvNodeAddr[5], pvNodeAddr[6], pvNodeAddr[7]);
             std::string barcode;
             this->generateBarcodeFromAddress(&barcode, pvNodeAddr);
             this->updateBarcodeTable(&barcode, pvNodeId);
@@ -454,14 +459,14 @@ namespace esphome {
         // Writing barcode & pvID to NVS
         uint16_t oldPvId = 0;
         if ( nvs_get_u16(this->nvsBarcodeTable, barcode->c_str(), &oldPvId) != ESP_OK ) {
-            ESP_LOGD(TAG, "Barcode %s not found in NVS", barcode->c_str());
-            ESP_LOGD (TAG, "  ...setting pvID to %i", pvID);
+            ESP_LOGI(TAG, "Barcode %s not found in NVS", barcode->c_str());
+            ESP_LOGI (TAG, "  ...setting pvID to %i", pvID);
             nvs_set_u16(this->nvsBarcodeTable, barcode->c_str(), pvID);
         }
         else {
-            ESP_LOGD(TAG, "Barcode %s was found with pvID %i", barcode->c_str(), oldPvId);
+            ESP_LOGI(TAG, "Barcode %s was found with pvID %i", barcode->c_str(), oldPvId);
             if (oldPvId != pvID) {
-                ESP_LOGD (TAG, "  ...updating pvID to %i", pvID);
+                ESP_LOGI (TAG, "  ...updating pvID to %i", pvID);
                 nvs_set_u16(this->nvsBarcodeTable, barcode->c_str(), pvID);
             }
         }
